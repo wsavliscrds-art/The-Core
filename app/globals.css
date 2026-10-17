@@ -1185,3 +1185,137 @@ textarea {
   width: 100%;
   margin: 10px 0 25px;
 }
+.reminder-settings-hidden {
+  display: none;
+}
+.device-settings .subtle {
+  margin-right: 12px;
+}
+.compact {
+  margin: 0;
+}
+.inset {
+  padding: 0 24px;
+}
+.week-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  margin: 30px 0;
+}
+.week-bars > div {
+  text-align: center;
+}
+.week-bars span,
+.week-bars small {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.bar-space {
+  height: 140px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+}
+.bar {
+  background: linear-gradient(#c7ed87, #718c4f);
+  width: 65%;
+  border-radius: 5px 5px 0 0;
+}
+.week-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.week-select label {
+  align-items: center;
+}
+.itinerary-edit {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 16px 0;
+}
+.bottom-nav {
+  display: none;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 3px;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sidebar {
+  overflow-y: auto;
+}
+.sidebar-bottom {
+  margin-top: auto;
+}
+.device-settings h3 {
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 25;
+    background: #181d15;
+    border-top: 1px solid #424d37;
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+    justify-content: space-around;
+  }
+  .bottom-nav button {
+    font-size: 11px;
+    min-height: 44px;
+    padding: 8px;
+  }
+  .bottom-nav .selected {
+    color: var(--lime);
+    background: #303b26;
+    border-radius: 6px;
+  }
+  main {
+    padding-bottom: 85px;
+  }
+  .check {
+    width: 32px;
+    height: 32px;
+  }
+  .icon {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  .week-bars {
+    gap: 5px;
+  }
+  .week-bars small {
+    font-size: 9px;
+  }
+  .toast {
+    bottom: 90px;
+  }
+  .login-page {
+    padding: 20px;
+  }
+  .login-card {
+    padding: 25px;
+  }
+  .week-select {
+    gap: 9px;
+  }
+}

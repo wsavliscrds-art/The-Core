@@ -1,126 +1,125 @@
-import { get, put, BlobPreconditionFailedError } from "@vercel/blob";
 import { z } from "zod";
-const schema = z.object({
-  id: z.string().uuid(),
-  kind: z.enum(["task", "habit", "trip", "note"]),
-  title: z.string().trim().min(1).max(160),
-  date: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/),
-  time: z.string().regex(/^(\d{2}:\d{2})?$/),
-  priority: z.enum(["Alta", "Média", "Baixa"]),
-  done: z.boolean(),
-  completedAt: z.string().max(10).optional(),
-  details: z.string().max(10000),
-  checks: z.array(z.string().max(200)).max(100),
-  checkins: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(10000),
-});
-const path = "core-os/workspace-v1.json";
+import { serverDb } from "../../lib/server-db";
+import { itemSchema } from "../../lib/schema";
+import { importLegacy } from "../../lib/legacy";
 const reply = (body: unknown, status = 200) =>
   Response.json(body, {
     status,
     headers: { "Cache-Control": "private, no-store" },
   });
-function guard(req: Request, write = false) {
-  if (
-    process.env.CORE_PRIVATE_WORKSPACE !== "true" ||
-    !process.env.BLOB_READ_WRITE_TOKEN
-  )
-    return reply(
-      { error: "Conecte o armazenamento privado no projeto Vercel." },
-      503,
-    );
-  const url = new URL(req.url);
-  // Vercel Authentication is configured for ALL deployments on this project.
-  // Custom domains are deliberately unsupported by this personal workspace.
-  if (process.env.VERCEL === "1" && !url.hostname.endsWith(".vercel.app"))
-    return reply(
-      { error: "Abra este app pelo endereço privado da Vercel." },
-      403,
-    );
-  if (write && req.headers.get("origin") !== url.origin)
-    return reply({ error: "Origem inválida." }, 403);
-  return null;
+async function context() {
+  const db = await serverDb();
+  const {
+    data: { user },
+    error,
+  } = await db.auth.getUser();
+  return { db, user: error ? null : user };
 }
-async function read() {
-  const result = await get(path, { access: "private", useCache: false });
-  if (!result)
-    return { items: [] as z.infer<typeof schema>[], etag: undefined };
-  if (result.statusCode !== 200) throw Error("Unexpected storage response");
-  return {
-    items: z
-      .array(schema)
-      .max(1000)
-      .parse(await new Response(result.stream).json()),
-    etag: result.blob.etag,
-  };
+async function rows(db: Awaited<ReturnType<typeof serverDb>>, userId: string) {
+  const { data, error } = await db
+    .from("core_items")
+    .select("data,updated_at")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  return itemSchema
+    .array()
+    .parse(data.map((r) => ({ ...r.data, revision: r.updated_at })));
 }
-export async function GET(req: Request) {
-  const error = guard(req);
-  if (error) return error;
+export async function GET() {
   try {
-    const data = await read();
-    return reply({ items: data.items, mode: "blob" });
+    const { db, user } = await context();
+    if (!user) return reply({ error: "Entre na sua conta." }, 401);
+    await importLegacy(user);
+    return reply({ items: await rows(db, user.id), mode: "database" });
   } catch {
     return reply(
-      { error: "Não foi possível carregar os registros. Tente novamente." },
+      { error: "Não foi possível carregar seus registros. Tente novamente." },
       502,
     );
   }
 }
-async function mutate(req: Request, remove: boolean) {
-  const error = guard(req, true);
-  if (error) return error;
+async function mutate(req: Request, remove = false) {
+  if (req.headers.get("origin") !== new URL(req.url).origin)
+    return reply({ error: "Origem inválida." }, 403);
   try {
-    const item = remove ? null : schema.parse(await req.json());
-    const id = remove
-      ? z.string().uuid().parse(new URL(req.url).searchParams.get("id"))
-      : item!.id;
-    const data = await read();
-    const items = remove
-      ? data.items.filter((i) => i.id !== id)
-      : data.items.some((i) => i.id === id)
-        ? data.items.map((i) => (i.id === id ? item! : i))
-        : [item!, ...data.items];
-    if (items.length > 1000)
-      return reply(
-        {
-          error:
-            "Limite de 1.000 registros atingido. Exporte e organize seus dados.",
-        },
-        400,
-      );
-    await put(path, JSON.stringify(items), {
-      access: "private",
-      contentType: "application/json",
-      addRandomSuffix: false,
-      allowOverwrite: Boolean(data.etag),
-      ...(data.etag ? { ifMatch: data.etag } : {}),
-      cacheControlMaxAge: 60,
-    });
-    return reply({ ok: true, items });
+    const { db, user } = await context();
+    if (!user) return reply({ error: "Entre na sua conta." }, 401);
+    if (remove) {
+      const id = z
+        .string()
+        .uuid()
+        .parse(new URL(req.url).searchParams.get("id"));
+      const revision = z
+        .string()
+        .datetime({ offset: true })
+        .parse(new URL(req.url).searchParams.get("revision"));
+      const { data, error } = await db
+        .from("core_items")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("id", id)
+        .eq("updated_at", revision)
+        .select("id");
+      if (error) throw error;
+      if (!data.length)
+        return reply(
+          {
+            error:
+              "Este registro mudou em outro dispositivo. Recarregue antes de excluir.",
+          },
+          409,
+        );
+    } else {
+      const text = await req.text();
+      if (text.length > 300000)
+        return reply({ error: "Registro muito grande." }, 413);
+      const { revision, ...item } = itemSchema.parse(JSON.parse(text));
+      const value = {
+        user_id: user.id,
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        due_date: item.date || null,
+        data: item,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = revision
+        ? await db
+            .from("core_items")
+            .update(value)
+            .eq("user_id", user.id)
+            .eq("id", item.id)
+            .eq("updated_at", revision)
+            .select("id")
+        : await db.from("core_items").insert(value).select("id");
+      if (error) throw error;
+      if (!data.length)
+        return reply(
+          {
+            error:
+              "Este registro mudou em outro dispositivo. Recarregue antes de salvar.",
+          },
+          409,
+        );
+    }
+    return reply({ ok: true, items: await rows(db, user.id) });
   } catch (e) {
-    if (e instanceof z.ZodError)
-      return reply({ error: "Verifique os campos informados." }, 400);
-    if (e instanceof BlobPreconditionFailedError)
-      return reply(
-        {
-          error:
-            "Outro dispositivo alterou os registros. Recarregue e tente novamente.",
-        },
-        409,
-      );
     return reply(
       {
         error:
-          "Não foi possível salvar. Seus registros anteriores foram preservados.",
+          e instanceof z.ZodError || e instanceof SyntaxError
+            ? "Verifique os campos, dias de repetição e datas da viagem."
+            : "Não foi possível salvar. Tente novamente.",
       },
-      502,
+      e instanceof z.ZodError || e instanceof SyntaxError ? 400 : 502,
     );
   }
 }
 export async function PUT(req: Request) {
-  return mutate(req, false);
+  return mutate(req);
 }
 export async function DELETE(req: Request) {
   return mutate(req, true);
 }
-

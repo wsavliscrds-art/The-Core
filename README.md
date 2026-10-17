@@ -1,56 +1,39 @@
 # The Core OS
 
-App pessoal para tarefas, hábitos, viagens e notas, com interface escura responsiva em português.
+App em português para tarefas, rotinas, hábitos, viagens e notas, publicado na Vercel.
 
-## Stack
+## O que inclui
+- Agenda diária com tarefas, hábitos e compromissos de viagem.
+- Rotinas diárias, dias úteis, fins de semana e dias específicos, com conclusões por data.
+- Viagens com partida/retorno, hospedagem, reservas, bagagem e roteiro por dia.
+- Resumo dos últimos sete dias e pendências.
+- Lembretes locais configuráveis enquanto o app estiver aberto. O navegador pode suspender abas em segundo plano; não são alertas push agendados no servidor.
+- Instalação na tela inicial (PWA), navegação móvel, aviso offline sem armazenar dados pessoais em cache.
+- Login e cadastro por e-mail/senha com Supabase Auth; dados isolados por usuário com RLS no PostgreSQL.
+- Exportação JSON e proteção contra sobrescrever uma edição concorrente.
 
-Next.js, React, CSS e **Vercel Blob privado**. Hospedado no projeto `thecore_oss`. Código: [wsavliscrds-art/The-Core](https://github.com/wsavliscrds-art/The-Core).
+## Infraestrutura
+Next.js 16.3.8, React, Supabase (PostgreSQL + Auth), integração Marketplace da Vercel. Projeto Vercel: `thecore_oss`; banco: `thecore-db`. O Blob anterior continua preservado para migração.
 
-## Funcionalidades
+Vercel Authentication permanece ativada em todos os deployments durante a validação do novo login. O login do app também é obrigatório e a API nunca usa a chave de serviço para ler dados comuns.
 
-- Dashboard com tarefas pendentes, conclusões do dia, hábitos e recorde de sequência.
-- Tarefas com prioridades, datas, horários, filtros, busca e conclusão.
-- Hábitos diários com check-in e sequência de dias.
-- Viagens com partida, roteiro em texto e checklist.
-- Notas e exportação JSON.
-- Persistência na nuvem com controle de concorrência por ETag.
+## Configuração
+Veja `.env.example`. A conexão Supabase injeta as variáveis na Vercel. `npm run build` executa a migração idempotente de `database/schema.sql` antes de compilar. Localmente, configure `.env.local`; para migrar localmente, use `node --env-file=.env.local scripts/migrate.mjs`.
 
-## Armazenamento e acesso
+No Supabase Auth, Site URL: `https://thecoreoss.vercel.app`; Redirect URL: `https://thecoreoss.vercel.app/auth/confirm`. Confirmação de e-mail permanece ativa. A entrega de e-mail depende das cotas e configuração SMTP do Supabase.
 
-O armazenamento privado `thecore-data` está conectado ao projeto Vercel. O SDK lê `BLOB_READ_WRITE_TOKEN` exclusivamente no servidor. Cada alteração atualiza um documento JSON privado; alterações concorrentes são recusadas quando o ETag não coincide.
+## Migração dos dados anteriores
+Configure `CORE_LEGACY_OWNER_EMAIL` com o e-mail do proprietário. Apenas após login com esse e-mail confirmado os registros do Blob são importados em uma transação. A migração é idempotente, não sobrescreve registros existentes e mantém o Blob original. Sem a variável, nada é atribuído automaticamente a uma conta.
 
-Este é um **espaço pessoal único**, protegido por **Vercel Authentication**, não um SaaS com contas separadas. Visitantes autorizados na Vercel compartilham os mesmos registros. A proteção do projeto está configurada para todos os deployments (`deploymentType: all`). As APIs aceitam somente os endereços `vercel.app`; domínios personalizados não são suportados nesta versão. Não desative Deployment Protection. Para tornar o app público, implemente autenticação própria antes.
-
-Variáveis:
-
-- `BLOB_READ_WRITE_TOKEN`: criada pela conexão do armazenamento.
-- `CORE_PRIVATE_WORKSPACE=true`: confirma o modo de espaço privado protegido pela Vercel.
-
-Não há banco Neon, SQL ou migrações em uso nesta versão. Blob armazena documentos JSON, e não tabelas relacionais. Limite desta versão: 1.000 registros por espaço.
-
-## Desenvolvimento
-
+## Desenvolvimento e verificação
 Node.js 24 recomendado.
 
 ```sh
 npm ci
-# Vincule a Vercel e configure .env.local com as variáveis acima.
-npm run dev
-```
-
-## Verificação
-
-```sh
 npm test
 npm run typecheck
 npm run build
+npm run dev
 ```
 
-O build usa webpack para compatibilidade com ambientes Windows que restringem junctions do Turbopack.
-
-## Limites
-
-Sem alertas push, envio de e-mails ou lembretes em segundo plano. Horários organizam a agenda visual. Hábitos são diários, no fuso de São Paulo. Roteiros são texto livre e o checklist tem cinco itens padrão. Atualize a página ao alternar entre dispositivos; o app avisa quando detecta alteração concorrente durante a gravação.
-
-Referência: [Vercel Blob SDK](https://vercel.com/docs/vercel-blob/using-blob-sdk).
-
+Horários usam America/Sao_Paulo. Limite: 1.000 registros por conta. O app requer internet para carregar e salvar; não enfileira edições offline. O código não contém senhas ou tokens privados.

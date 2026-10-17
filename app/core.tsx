@@ -24,9 +24,21 @@ import {
   Sun,
   Menu,
 } from "lucide-react";
-import { Item, today, streak, longestStreak } from "./model";
+import {
+  Item,
+  today,
+  streak,
+  longestStreak,
+  recurring,
+  scheduled,
+  completed,
+} from "./model";
 
+import { Agenda, Weekly, PlanningFields, DeviceSettings } from "./planning";
+import { browserDb } from "./lib/browser-db";
 const tabs = [
+  ["Agenda", CalendarDays],
+  ["Resumo semanal", Flame],
   ["Visão geral", LayoutDashboard],
   ["Tarefas", CheckSquare],
   ["Hábitos", Target],
@@ -46,8 +58,7 @@ const fmt = (d: string) =>
         month: "short",
       })
     : "Sem data";
-export default function Core() {
-  const name = "Weslley";
+export default function Core({ name }: { name: string }) {
   const [tab, setTab] = useState("Visão geral"),
     [items, setItems] = useState<Item[]>([]),
     [mode, setMode] = useState("loading"),
@@ -67,7 +78,7 @@ export default function Core() {
         const data = await r.json();
         if (r.ok) {
           setItems(data.items);
-          setMode("blob");
+          setMode("database");
         } else {
           setMode("error");
           setMessage(data.error || "Entre na sua conta para continuar.");
@@ -90,11 +101,20 @@ export default function Core() {
     trips = items
       .filter((i) => i.kind === "trip")
       .sort((a, b) => a.date.localeCompare(b.date)),
-    pending = tasks.filter((i) => !i.done),
-    done = tasks.filter((i) => i.completedAt === date && i.done),
+    pending = tasks.filter((i) => !completed(i, date)),
+    done = tasks.filter((i) =>
+      recurring(i)
+        ? i.checkins.includes(date)
+        : i.completedAt === date && i.done,
+    ),
     checked = habits.filter((i) => i.checkins.includes(date)),
-    progress = tasks.length
-      ? Math.round((tasks.filter((i) => i.done).length / tasks.length) * 100)
+    progress = tasks.filter((i) => scheduled(i, date)).length
+      ? Math.round(
+          (tasks.filter((i) => scheduled(i, date) && completed(i, date))
+            .length /
+            tasks.filter((i) => scheduled(i, date)).length) *
+            100,
+        )
       : 0;
   function go(t: string) {
     setTab(t);
@@ -103,7 +123,7 @@ export default function Core() {
     setMobile(false);
   }
   function create(kind: Item["kind"] = "task") {
-    if (mode !== "blob") {
+    if (mode !== "database") {
       setMessage("Aguarde a conexão com o armazenamento.");
       return;
     }
@@ -124,12 +144,21 @@ export default function Core() {
     if (busy) return;
     setBusy(true);
     try {
-      if (mode !== "blob") throw Error("Aguarde a conexão com seus dados.");
-        const r = await fetch("/api/items" + (remove ? "?id=" + item.id : ""), {
+      if (mode !== "database") throw Error("Aguarde a conexão com seus dados.");
+      const r = await fetch(
+        "/api/items" +
+          (remove
+            ? "?id=" +
+              item.id +
+              "&revision=" +
+              encodeURIComponent(item.revision || "")
+            : ""),
+        {
           method: remove ? "DELETE" : "PUT",
           headers: { "Content-Type": "application/json" },
           body: remove ? undefined : JSON.stringify(item),
-        });
+        },
+      );
       const result = await r.json();
       if (!r.ok) throw Error(result.error || "Não foi possível salvar.");
       setItems(result.items);
@@ -143,7 +172,7 @@ export default function Core() {
   }
   function toggle(i: Item) {
     save(
-      i.kind === "habit"
+      recurring(i)
         ? {
             ...i,
             checkins: i.checkins.includes(date)
@@ -154,23 +183,30 @@ export default function Core() {
     );
   }
   function row(i: Item) {
-    const completed = i.kind === "habit" ? i.checkins.includes(date) : i.done;
+    const isDone = completed(i, date);
     return (
       <div className="item" key={i.id}>
         <button
-          disabled={busy}
-          className={"check " + (completed ? "checked" : "")}
-          aria-label={
-            completed ? "Desmarcar " + i.title : "Concluir " + i.title
-          }
+          disabled={busy || (recurring(i) && !scheduled(i, date))}
+          className={"check " + (isDone ? "checked" : "")}
+          aria-label={isDone ? "Desmarcar " + i.title : "Concluir " + i.title}
           onClick={() => toggle(i)}
         >
-          {completed && <Check size={13} />}
+          {isDone && <Check size={13} />}
         </button>
         <button className="item-title" onClick={() => setEdit(i)}>
-          <strong className={completed ? "strike" : ""}>{i.title}</strong>
+          <strong className={isDone ? "strike" : ""}>{i.title}</strong>
           <span>
-            {i.kind === "habit" ? "Todos os dias" : i.time || fmt(i.date)}
+            {(i.time ? i.time + " · " : "") +
+              (recurring(i)
+                ? {
+                    daily: "Diariamente",
+                    weekdays: "Dias úteis",
+                    weekends: "Fim de semana",
+                    custom: "Dias específicos",
+                    none: "Diariamente",
+                  }[i.repeat || "daily"]
+                : fmt(i.date))}
           </span>
         </button>
         {i.kind === "habit" ? (
@@ -198,7 +234,9 @@ export default function Core() {
     );
   }
   const dayTasks = pending
-    .filter((i) => !i.date || i.date <= date)
+    .filter((i) =>
+      recurring(i) ? scheduled(i, date) : !i.date || i.date <= date,
+    )
     .sort((a, b) => a.time.localeCompare(b.time));
   const selected =
     tab === "Tarefas"
@@ -212,7 +250,8 @@ export default function Core() {
     (i) =>
       i.kind === selected &&
       i.title.toLowerCase().includes(query.toLowerCase()) &&
-      (filter === "Todas" || (filter === "Pendentes" ? !i.done : i.done)),
+      (filter === "Todas" ||
+        (filter === "Pendentes" ? !completed(i, date) : completed(i, date))),
   );
   const upcoming = trips.find((i) => i.date >= date);
   return (
@@ -269,10 +308,10 @@ export default function Core() {
           </button>
           <div className="sync">
             <span
-              className={"status-dot " + (mode === "blob" ? "green" : "")}
+              className={"status-dot " + (mode === "database" ? "green" : "")}
             />
-            {mode === "blob"
-              ? "Sincronizado com Vercel Blob"
+            {mode === "database"
+              ? "Sincronizado com seu banco"
               : mode === "local"
                 ? "Armazenamento neste navegador"
                 : mode === "loading"
@@ -345,14 +384,24 @@ export default function Core() {
               disabled={mode === "loading" || mode === "error"}
               onClick={() =>
                 create(
-                  tab === "Visão geral" || tab === "Configurações"
+                  [
+                    "Visão geral",
+                    "Configurações",
+                    "Agenda",
+                    "Resumo semanal",
+                  ].includes(tab)
                     ? "task"
                     : selected,
                 )
               }
             >
               <Plus size={17} />{" "}
-              {tab === "Visão geral" || tab === "Configurações"
+              {[
+                "Visão geral",
+                "Configurações",
+                "Agenda",
+                "Resumo semanal",
+              ].includes(tab)
                 ? "Nova tarefa"
                 : "Adicionar " + labels[selected]}
             </button>
@@ -371,7 +420,11 @@ export default function Core() {
               </button>
             </div>
           )}
-          {tab === "Visão geral" ? (
+          {tab === "Agenda" ? (
+            <Agenda items={items} row={row} save={save} busy={busy} />
+          ) : tab === "Resumo semanal" ? (
+            <Weekly items={items} date={date} />
+          ) : tab === "Visão geral" ? (
             <>
               <section className="stats">
                 {[
@@ -556,18 +609,27 @@ export default function Core() {
           ) : tab === "Configurações" ? (
             <section className="panel config">
               <h2>Conexões e dados</h2>
+              <button
+                className="subtle"
+                onClick={async () => {
+                  await browserDb().auth.signOut();
+                  location.assign("/login");
+                }}
+              >
+                Sair da minha conta
+              </button>
               <div className="connection">
                 <Database />
                 <div>
-                  <h3>Vercel Blob</h3>
+                  <h3>Banco Supabase · Vercel</h3>
                   <p>
-                    {mode === "blob"
-                      ? "Conectado. Seus registros ficam no armazenamento privado deste espaço pessoal."
+                    {mode === "database"
+                      ? "Conectado. Seus registros são protegidos pela sua conta."
                       : "Aguardando configuração segura do banco de dados."}
                   </p>
                 </div>
                 <span className="pill">
-                  {mode === "blob" ? "Conectado" : "Pendente"}
+                  {mode === "database" ? "Conectado" : "Pendente"}
                 </span>
               </div>
               <div className="connection">
@@ -676,6 +738,36 @@ export default function Core() {
               </section>
             </>
           )}
+          <div
+            className={
+              tab === "Configurações"
+                ? "panel config"
+                : "reminder-settings-hidden"
+            }
+          >
+            <DeviceSettings items={items} notify={setMessage} />
+          </div>
+          <nav className="bottom-nav" aria-label="Navegação móvel">
+            {[
+              "Visão geral",
+              "Agenda",
+              "Tarefas",
+              "Viagens",
+              "Configurações",
+            ].map((t) => (
+              <button
+                key={t}
+                className={tab === t ? "selected" : ""}
+                onClick={() => go(t)}
+              >
+                {t === "Visão geral"
+                  ? "Início"
+                  : t === "Configurações"
+                    ? "Ajustes"
+                    : t}
+              </button>
+            ))}
+          </nav>
           <footer>
             <span className="footer-brand">THE CORE OS</span>
             <span>Organize o essencial. Viva o resto.</span>
@@ -749,7 +841,7 @@ export default function Core() {
                   onChange={(e) => setEdit({ ...edit, date: e.target.value })}
                 />
               </label>
-              {edit.kind === "task" ? (
+              {edit.kind !== "note" ? (
                 <label>
                   Horário
                   <input
@@ -787,12 +879,7 @@ export default function Core() {
                 onChange={(e) => setEdit({ ...edit, details: e.target.value })}
               />
             </label>
-            {edit.kind === "habit" && (
-              <p className="hint">
-                Este hábito se repete diariamente. Faça seu check-in na lista de
-                hábitos.
-              </p>
-            )}
+            <PlanningFields edit={edit} setEdit={setEdit} />
             {edit.kind === "trip" && (
               <div className="checklist">
                 <h3>Antes de partir</h3>
