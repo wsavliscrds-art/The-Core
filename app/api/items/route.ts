@@ -29,8 +29,8 @@ function guard(req: Request, write = false) {
       503,
     );
   const url = new URL(req.url);
-  // Vercel Authentication guards every vercel.app domain on this project.
-  // Custom domains are deliberately rejected, because its policy exempts them.
+  // Vercel Authentication is configured for ALL deployments on this project.
+  // Custom domains are deliberately unsupported by this personal workspace.
   if (process.env.VERCEL === "1" && !url.hostname.endsWith(".vercel.app"))
     return reply(
       { error: "Abra este app pelo endereço privado da Vercel." },
@@ -123,3 +123,4 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   return mutate(req, true);
 }
+

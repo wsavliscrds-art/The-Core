@@ -19,7 +19,7 @@ Next.js, React, CSS e **Vercel Blob privado**. Hospedado no projeto `thecore_oss
 
 O armazenamento privado `thecore-data` está conectado ao projeto Vercel. O SDK lê `BLOB_READ_WRITE_TOKEN` exclusivamente no servidor. Cada alteração atualiza um documento JSON privado; alterações concorrentes são recusadas quando o ETag não coincide.
 
-Este é um **espaço pessoal único**, protegido por **Vercel Authentication**, não um SaaS com contas separadas. Visitantes autorizados na Vercel compartilham os mesmos registros. A proteção existente do projeto cobre todos os endereços `vercel.app`; as APIs recusam domínios personalizados para evitar a exceção de proteção desses domínios. Não desative Deployment Protection. Para tornar o app público, implemente autenticação própria antes.
+Este é um **espaço pessoal único**, protegido por **Vercel Authentication**, não um SaaS com contas separadas. Visitantes autorizados na Vercel compartilham os mesmos registros. A proteção do projeto está configurada para todos os deployments (`deploymentType: all`). As APIs aceitam somente os endereços `vercel.app`; domínios personalizados não são suportados nesta versão. Não desative Deployment Protection. Para tornar o app público, implemente autenticação própria antes.
 
 Variáveis:
 
@@ -53,3 +53,4 @@ O build usa webpack para compatibilidade com ambientes Windows que restringem ju
 Sem alertas push, envio de e-mails ou lembretes em segundo plano. Horários organizam a agenda visual. Hábitos são diários, no fuso de São Paulo. Roteiros são texto livre e o checklist tem cinco itens padrão. Atualize a página ao alternar entre dispositivos; o app avisa quando detecta alteração concorrente durante a gravação.
 
 Referência: [Vercel Blob SDK](https://vercel.com/docs/vercel-blob/using-blob-sdk).
+
